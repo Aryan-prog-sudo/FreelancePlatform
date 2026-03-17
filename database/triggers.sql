@@ -8,10 +8,14 @@ FOR EACH ROW
 BEGIN
   IF NEW.status = 'Signed' THEN
     INSERT INTO ESCROW_PAYMENT (escrow_id, contract_id, amount, status)
-    SELECT NEW.contract_id + 1000, NEW.contract_id, b.amount, 'Pending'
-    FROM BID b
-    WHERE b.project_id = NEW.project_id
-    LIMIT 1;
+    SELECT 
+      NEW.contract_id + 1000,
+      NEW.contract_id,
+      COALESCE((SELECT b.amount FROM BID b WHERE b.project_id = NEW.project_id LIMIT 1),
+               (SELECT p.budget FROM PROJECT p WHERE p.project_id = NEW.project_id LIMIT 1),
+               0.00),
+      'Pending'
+    FROM DUAL;
   END IF;
 END$$
 

@@ -36,4 +36,14 @@ router.get('/upcoming', async (req, res) => {
   res.json(rows);
 });
 
+// POST: Add a new project
+router.post('/', async (req, res) => {
+  const { project_id, title, description, budget, deadline, customer_id, category_id } = req.body;
+  await db.query(
+    `INSERT INTO PROJECT VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [project_id, title, description, budget, deadline, customer_id, category_id || 1]
+  );
+  res.json({ message: 'Project posted!' });
+});
+
 module.exports = router;

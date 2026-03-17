@@ -4,16 +4,21 @@ import CustomerDashboard from './pages/CustomerDashboard';
 import FreelancerDashboard from './pages/FreelancerDashboard';
 import ArtistDashboard from './pages/ArtistDashboard';
 
-export default function App() {
+function ProtectedRoute({ element, roleId }) {
   const user = JSON.parse(localStorage.getItem('user'));
+  if (!user) return <Navigate to="/" />;
+  if (user.role_id != roleId) return <Navigate to="/" />;
+  return element;
+}
 
+export default function App() {
   return (
     <BrowserRouter>
       <Routes>
         <Route path="/" element={<Login />} />
-        <Route path="/customer"   element={user?.role_id == 1 ? <CustomerDashboard />   : <Navigate to="/" />} />
-        <Route path="/freelancer" element={user?.role_id == 2 ? <FreelancerDashboard /> : <Navigate to="/" />} />
-        <Route path="/artist"     element={user?.role_id == 3 ? <ArtistDashboard />     : <Navigate to="/" />} />
+        <Route path="/customer"   element={<ProtectedRoute element={<CustomerDashboard />}   roleId={1} />} />
+        <Route path="/freelancer" element={<ProtectedRoute element={<FreelancerDashboard />} roleId={2} />} />
+        <Route path="/artist"     element={<ProtectedRoute element={<ArtistDashboard />}     roleId={3} />} />
       </Routes>
     </BrowserRouter>
   );

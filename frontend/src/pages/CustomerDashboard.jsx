@@ -35,14 +35,27 @@ export default function CustomerDashboard() {
       alert('Please fill in title, budget and deadline');
       return;
     }
-    const project_id = Math.floor(Math.random() * 900000) + 100000;
-    await axios.post('http://localhost:3001/api/projects', {
-      ...form, project_id, customer_id: user.user_id
-    });
-    alert('Project posted!');
-    setForm({ title: '', description: '', budget: '', deadline: '', category_id: '1' });
-    fetchAll();
-    setTab('projects');
+    if (parseFloat(form.budget) <= 0) {
+      alert('Budget must be greater than 0');
+      return;
+    }
+    if (new Date(form.deadline) < new Date()) {
+      alert('Deadline cannot be in the past');
+      return;
+    }
+    try {
+      const project_id = Math.floor(Math.random() * 900000) + 100000;
+      await axios.post('http://localhost:3001/api/projects', {
+        ...form, project_id, customer_id: user.user_id
+      });
+      alert('Project posted!');
+      setForm({ title: '', description: '', budget: '', deadline: '', category_id: '1' });
+      fetchAll();
+      setTab('projects');
+    } catch (err) {
+      // Shows trigger error message if validation fails in database
+      alert(err.response?.data?.message || 'Error posting project');
+    }
   };
 
   const viewBids = async (project) => {

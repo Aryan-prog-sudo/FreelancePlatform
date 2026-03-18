@@ -37,13 +37,20 @@ router.get('/upcoming', async (req, res) => {
 });
 
 // POST: Add a new project
+// Trigger validate_project_budget fires automatically to check budget > 0 and deadline not in past
 router.post('/', async (req, res) => {
   const { project_id, title, description, budget, deadline, customer_id, category_id } = req.body;
-  await db.query(
-    `INSERT INTO PROJECT VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [project_id, title, description, budget, deadline, customer_id, category_id || 1]
-  );
-  res.json({ message: 'Project posted!' });
+  try {
+    await db.query(
+      `INSERT INTO PROJECT VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [project_id, title, description, budget, deadline, customer_id, category_id || 1]
+    );
+    res.json({ message: 'Project posted!' });
+  } catch (err) {
+    console.error(err);
+    // Return trigger error message directly to frontend
+    res.status(400).json({ message: err.sqlMessage || 'Error creating project' });
+  }
 });
 
 module.exports = router;

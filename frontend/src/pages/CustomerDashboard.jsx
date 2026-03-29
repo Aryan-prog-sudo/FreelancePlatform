@@ -17,6 +17,11 @@ export default function CustomerDashboard() {
   const [notifications, setNotifications] = useState([]);
   const [showNotif, setShowNotif] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [passForm, setPassForm] = useState({ old_password: '', new_password: '', confirm_password: '' });
+  const [passMsg, setPassMsg] = useState('');
+  const [showOld, setShowOld] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -80,6 +85,30 @@ export default function CustomerDashboard() {
     fetchAll();
   };
 
+  const changePassword = async () => {
+    setPassMsg('');
+    if (!passForm.old_password || !passForm.new_password || !passForm.confirm_password) {
+      setPassMsg({ text: 'Please fill in all fields', type: 'error' }); return;
+    }
+    if (passForm.new_password !== passForm.confirm_password) {
+      setPassMsg({ text: 'New passwords do not match', type: 'error' }); return;
+    }
+    if (passForm.new_password.length < 6) {
+      setPassMsg({ text: 'Password must be at least 6 characters', type: 'error' }); return;
+    }
+    try {
+      await axios.post(`${API}/users/change-password`, {
+        user_id: user.user_id,
+        old_password: passForm.old_password,
+        new_password: passForm.new_password
+      });
+      setPassMsg({ text: 'Password changed successfully!', type: 'success' });
+      setPassForm({ old_password: '', new_password: '', confirm_password: '' });
+    } catch (err) {
+      setPassMsg({ text: err.response?.data?.message || 'Error changing password', type: 'error' });
+    }
+  };
+
   const myContracts = contracts.filter(c => c.client_name === user.name);
   const pendingEscrows = escrows.filter(e => e.escrow_status !== 'Released' && e.escrow_status !== 'Refunded');
 
@@ -88,6 +117,7 @@ export default function CustomerDashboard() {
     { id: 'post', label: 'Post Project', icon: '+' },
     { id: 'contracts', label: 'Contracts', icon: '◈' },
     { id: 'escrow', label: 'Payments', icon: '$' },
+    { id: 'settings', label: 'Settings', icon: '⚙' },
   ];
 
   const Badge = ({ status }) => {
@@ -108,16 +138,20 @@ export default function CustomerDashboard() {
     );
   };
 
+  const inputStyle = {
+    width: '100%', padding: '10px 40px 10px 14px', background: '#161622',
+    border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white',
+    fontSize: '0.9rem', boxSizing: 'border-box'
+  };
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#0a0a0f', fontFamily: "'Inter', 'Segoe UI', sans-serif", color: 'white' }}>
 
       {/* Sidebar */}
       <div style={{
         width: '240px', background: '#0d0d14', borderRight: '1px solid #1e1e2e',
-        display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0,
-        position: 'fixed', height: '100vh', zIndex: 50
+        display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 50
       }}>
-        {/* Logo */}
         <div style={{ padding: '24px 20px', borderBottom: '1px solid #1e1e2e' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
@@ -128,12 +162,8 @@ export default function CustomerDashboard() {
           </div>
         </div>
 
-        {/* User Info */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #1e1e2e' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '10px',
-            background: '#161622', borderRadius: '10px', padding: '10px 12px'
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#161622', borderRadius: '10px', padding: '10px 12px' }}>
             <div style={{
               width: '34px', height: '34px', borderRadius: '50%',
               background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
@@ -147,7 +177,6 @@ export default function CustomerDashboard() {
           </div>
         </div>
 
-        {/* Nav */}
         <nav style={{ padding: '12px 12px', flex: 1 }}>
           <div style={{ fontSize: '0.65rem', color: '#4b5563', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', padding: '0 8px', marginBottom: '8px' }}>Menu</div>
           {tabs.map(t => (
@@ -169,13 +198,12 @@ export default function CustomerDashboard() {
           ))}
         </nav>
 
-        {/* Logout */}
         <div style={{ padding: '16px 12px', borderTop: '1px solid #1e1e2e' }}>
           <button onClick={logout} style={{
             width: '100%', padding: '9px 12px', background: 'transparent',
             color: '#6b7280', border: '1px solid #1e1e2e', borderRadius: '8px',
             cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500',
-            display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.15s'
+            display: 'flex', alignItems: 'center', gap: '8px'
           }}>
             <span>↩</span> Sign out
           </button>
@@ -200,12 +228,10 @@ export default function CustomerDashboard() {
             </p>
           </div>
 
-          {/* Notification Bell */}
           <div style={{ position: 'relative' }}>
             <button onClick={() => setShowNotif(!showNotif)} style={{
               background: '#161622', border: '1px solid #1e1e2e', borderRadius: '10px',
-              padding: '8px 14px', cursor: 'pointer', color: 'white', fontSize: '1rem',
-              display: 'flex', alignItems: 'center', gap: '6px', position: 'relative'
+              padding: '8px 14px', cursor: 'pointer', color: 'white', fontSize: '1rem', position: 'relative'
             }}>
               🔔
               {notifications.length > 0 && (
@@ -225,15 +251,14 @@ export default function CustomerDashboard() {
               }}>
                 <div style={{ padding: '14px 16px', borderBottom: '1px solid #1e1e2e', display: 'flex', justifyContent: 'space-between' }}>
                   <span style={{ fontWeight: '700', fontSize: '0.9rem' }}>Notifications</span>
-                  <span onClick={() => { setNotifications([]); setShowNotif(false); }}
-                    style={{ color: '#7c3aed', fontSize: '0.8rem', cursor: 'pointer' }}>Clear all</span>
+                  <span onClick={() => { setNotifications([]); setShowNotif(false); }} style={{ color: '#7c3aed', fontSize: '0.8rem', cursor: 'pointer' }}>Clear all</span>
                 </div>
                 {notifications.length === 0
                   ? <div style={{ padding: '2rem', textAlign: 'center', color: '#4b5563', fontSize: '0.85rem' }}>All caught up! 🎉</div>
                   : notifications.map((n, i) => (
-                    <div key={i} style={{ padding: '12px 16px', borderBottom: '1px solid #1e1e2e', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                      <span style={{ fontSize: '1rem', marginTop: '1px' }}>{n.type === 'success' ? '✅' : n.type === 'error' ? '❌' : '⚠️'}</span>
-                      <span style={{ color: '#9ca3af', fontSize: '0.85rem', lineHeight: '1.4' }}>{n.msg}</span>
+                    <div key={i} style={{ padding: '12px 16px', borderBottom: '1px solid #1e1e2e', display: 'flex', gap: '10px' }}>
+                      <span>{n.type === 'success' ? '✅' : n.type === 'error' ? '❌' : '⚠️'}</span>
+                      <span style={{ color: '#9ca3af', fontSize: '0.85rem' }}>{n.msg}</span>
                     </div>
                   ))}
               </div>
@@ -241,7 +266,6 @@ export default function CustomerDashboard() {
           </div>
         </div>
 
-        {/* Page Content */}
         <div style={{ padding: '32px', flex: 1 }}>
 
           {/* Stats Row */}
@@ -376,26 +400,26 @@ export default function CustomerDashboard() {
                     <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{f.label}</label>
                     <input type={f.type} placeholder={f.placeholder} value={form[f.key]}
                       onChange={e => setForm({ ...form, [f.key]: e.target.value })}
-                      style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                      style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box' }} />
                   </div>
                 ))}
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</label>
                   <textarea placeholder="Describe your project requirements..." value={form.description}
                     onChange={e => setForm({ ...form, description: e.target.value })}
-                    rows={3} style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', resize: 'vertical', outline: 'none' }} />
+                    rows={3} style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', resize: 'vertical' }} />
                 </div>
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Deadline *</label>
                   <input type="date" value={form.deadline}
                     onChange={e => setForm({ ...form, deadline: e.target.value })}
-                    style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                    style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box' }} />
                 </div>
                 <div style={{ marginBottom: '24px' }}>
                   <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Category</label>
                   <select value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })}
-                    style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }}>
-                    {[['1','Web Design'],['2','Mobile App'],['3','Graphic Design'],['4','Data Science'],['5','Content Writing']].map(([v, l]) => (
+                    style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box' }}>
+                    {[['1', 'Web Design'], ['2', 'Mobile App'], ['3', 'Graphic Design'], ['4', 'Data Science'], ['5', 'Content Writing']].map(([v, l]) => (
                       <option key={v} value={v}>{l}</option>
                     ))}
                   </select>
@@ -442,36 +466,86 @@ export default function CustomerDashboard() {
 
           {/* Escrow & Payments */}
           {tab === 'escrow' && (
-            <div>
-              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e1e2e' }}>
-                  <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>Escrow & Payments</div>
-                  <div style={{ color: '#4b5563', fontSize: '0.8rem', marginTop: '4px' }}>{pendingEscrows.length} pending payment{pendingEscrows.length !== 1 ? 's' : ''}</div>
-                </div>
-                {pendingEscrows.length === 0
-                  ? <div style={{ padding: '3rem', textAlign: 'center', color: '#4b5563' }}>No pending payments 🎉</div>
-                  : pendingEscrows.map((e, i) => (
-                    <div key={i} style={{ padding: '20px 24px', borderTop: '1px solid #1e1e2e', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <div>
-                        <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{e.project_title}</div>
-                        <div style={{ color: '#6b7280', fontSize: '0.8rem', marginTop: '3px' }}>Freelancer: {e.freelancer_name}</div>
-                        <div style={{ marginTop: '6px' }}><Badge status={e.escrow_status} /></div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#10b981', marginBottom: '10px' }}>${e.amount}</div>
-                        <div style={{ display: 'flex', gap: '8px' }}>
-                          <button onClick={() => updateEscrow(e.escrow_id, 'Released')} style={{
-                            padding: '7px 16px', background: '#10b981', color: 'white',
-                            border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.82rem'
-                          }}>Release</button>
-                          <button onClick={() => updateEscrow(e.escrow_id, 'Refunded')} style={{
-                            padding: '7px 16px', background: 'transparent', color: '#ef4444',
-                            border: '1px solid #ef444440', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.82rem'
-                          }}>Refund</button>
-                        </div>
+            <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', overflow: 'hidden' }}>
+              <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e1e2e' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>Escrow & Payments</div>
+                <div style={{ color: '#4b5563', fontSize: '0.8rem', marginTop: '4px' }}>{pendingEscrows.length} pending payment{pendingEscrows.length !== 1 ? 's' : ''}</div>
+              </div>
+              {pendingEscrows.length === 0
+                ? <div style={{ padding: '3rem', textAlign: 'center', color: '#4b5563' }}>No pending payments 🎉</div>
+                : pendingEscrows.map((e, i) => (
+                  <div key={i} style={{ padding: '20px 24px', borderTop: '1px solid #1e1e2e', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{e.project_title}</div>
+                      <div style={{ color: '#6b7280', fontSize: '0.8rem', marginTop: '3px' }}>Freelancer: {e.freelancer_name}</div>
+                      <div style={{ marginTop: '6px' }}><Badge status={e.escrow_status} /></div>
+                    </div>
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#10b981', marginBottom: '10px' }}>${e.amount}</div>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => updateEscrow(e.escrow_id, 'Released')} style={{
+                          padding: '7px 16px', background: '#10b981', color: 'white',
+                          border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.82rem'
+                        }}>Release</button>
+                        <button onClick={() => updateEscrow(e.escrow_id, 'Refunded')} style={{
+                          padding: '7px 16px', background: 'transparent', color: '#ef4444',
+                          border: '1px solid #ef444440', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.82rem'
+                        }}>Refund</button>
                       </div>
                     </div>
-                  ))}
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {/* Settings */}
+          {tab === 'settings' && (
+            <div style={{ maxWidth: '480px' }}>
+              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', padding: '28px' }}>
+                <div style={{ fontWeight: '700', fontSize: '1rem', marginBottom: '8px' }}>Change Password</div>
+                <div style={{ color: '#4b5563', fontSize: '0.82rem', marginBottom: '24px' }}>
+                  Make sure your new password is at least 6 characters long.
+                </div>
+
+                {[
+                  { label: 'Current Password', key: 'old_password', show: showOld, toggle: () => setShowOld(!showOld) },
+                  { label: 'New Password', key: 'new_password', show: showNew, toggle: () => setShowNew(!showNew) },
+                  { label: 'Confirm New Password', key: 'confirm_password', show: showConfirm, toggle: () => setShowConfirm(!showConfirm) },
+                ].map(f => (
+                  <div key={f.key} style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{f.label}</label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={f.show ? 'text' : 'password'}
+                        placeholder={`Enter ${f.label.toLowerCase()}`}
+                        value={passForm[f.key]}
+                        onChange={e => setPassForm({ ...passForm, [f.key]: e.target.value })}
+                        style={inputStyle}
+                      />
+                      <button onClick={f.toggle} style={{
+                        position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', cursor: 'pointer', color: '#4b5563', fontSize: '1rem'
+                      }}>{f.show ? '🙈' : '👁️'}</button>
+                    </div>
+                  </div>
+                ))}
+
+                {passMsg && (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem',
+                    background: passMsg.type === 'success' ? '#10b98118' : '#ef444418',
+                    color: passMsg.type === 'success' ? '#10b981' : '#ef4444',
+                    border: `1px solid ${passMsg.type === 'success' ? '#10b98130' : '#ef444430'}`
+                  }}>
+                    {passMsg.type === 'success' ? '✅' : '⚠️'} {passMsg.text}
+                  </div>
+                )}
+
+                <button onClick={changePassword} style={{
+                  width: '100%', padding: '12px', background: '#7c3aed',
+                  color: 'white', border: 'none', borderRadius: '9px',
+                  fontWeight: '700', fontSize: '0.95rem', cursor: 'pointer'
+                }}>Update Password</button>
               </div>
             </div>
           )}

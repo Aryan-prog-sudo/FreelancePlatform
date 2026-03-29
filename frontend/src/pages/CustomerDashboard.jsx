@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
+const API = 'http://localhost:3001/api';
+
 export default function CustomerDashboard() {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem('user'));
@@ -12,55 +14,51 @@ export default function CustomerDashboard() {
   const [form, setForm] = useState({ title: '', description: '', budget: '', deadline: '', category_id: '1' });
   const [selectedProject, setSelectedProject] = useState(null);
   const [bids, setBids] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [showNotif, setShowNotif] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    fetchAll();
-  }, []);
+  useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
     const [p, c, e] = await Promise.all([
-      axios.get('http://localhost:3001/api/projects'),
-      axios.get('http://localhost:3001/api/contracts'),
-      axios.get('http://localhost:3001/api/contracts/escrow')
+      axios.get(`${API}/projects`),
+      axios.get(`${API}/contracts`),
+      axios.get(`${API}/contracts/escrow`)
     ]);
     setProjects(p.data);
     setContracts(c.data);
     setEscrows(e.data);
+    const notifs = [];
+    c.data.filter(x => x.client_name === user.name).forEach(c => {
+      if (c.payment_status === 'Pending') notifs.push({ msg: `Escrow pending for "${c.project_title}"`, type: 'warning' });
+      if (c.payment_status === 'Released') notifs.push({ msg: `Payment released for "${c.project_title}"`, type: 'success' });
+      if (c.payment_status === 'Refunded') notifs.push({ msg: `Escrow refunded for "${c.project_title}"`, type: 'error' });
+    });
+    setNotifications(notifs);
   };
 
   const logout = () => { localStorage.removeItem('user'); navigate('/'); };
 
   const postProject = async () => {
-    if (!form.title || !form.budget || !form.deadline) {
-      alert('Please fill in title, budget and deadline');
-      return;
-    }
-    if (parseFloat(form.budget) <= 0) {
-      alert('Budget must be greater than 0');
-      return;
-    }
-    if (new Date(form.deadline) < new Date()) {
-      alert('Deadline cannot be in the past');
-      return;
-    }
+    if (!form.title || !form.budget || !form.deadline) { alert('Please fill in all required fields'); return; }
+    if (parseFloat(form.budget) <= 0) { alert('Budget must be greater than 0'); return; }
+    if (new Date(form.deadline) < new Date()) { alert('Deadline cannot be in the past'); return; }
+    setLoading(true);
     try {
-      const project_id = Math.floor(Math.random() * 900000) + 100000;
-      await axios.post('http://localhost:3001/api/projects', {
-        ...form, project_id, customer_id: user.user_id
-      });
-      alert('Project posted!');
+      await axios.post(`${API}/projects`, { ...form, customer_id: user.user_id });
+      setNotifications(prev => [{ msg: `Project "${form.title}" posted!`, type: 'success' }, ...prev]);
       setForm({ title: '', description: '', budget: '', deadline: '', category_id: '1' });
       fetchAll();
       setTab('projects');
     } catch (err) {
-      // Shows trigger error message if validation fails in database
       alert(err.response?.data?.message || 'Error posting project');
-    }
+    } finally { setLoading(false); }
   };
 
   const viewBids = async (project) => {
     setSelectedProject(project);
-    const res = await axios.get(`http://localhost:3001/api/contracts/bids/${project.project_id}`);
+    const res = await axios.get(`${API}/contracts/bids/${project.project_id}`);
     setBids(res.data);
     setTab('bids');
   };
@@ -68,225 +66,416 @@ export default function CustomerDashboard() {
   const acceptBid = async (bid) => {
     if (!window.confirm(`Accept bid from ${bid.freelancer_name} for $${bid.amount}?`)) return;
     try {
-      await axios.post('http://localhost:3001/api/contracts/accept-bid', {
-        project_id: selectedProject.project_id,
-        freelancer_id: bid.freelancer_id
-      });
-      alert('✅ Bid accepted! Contract created and escrow funded automatically.');
+      await axios.post(`${API}/contracts/accept-bid`, { project_id: selectedProject.project_id, freelancer_id: bid.freelancer_id });
+      setNotifications(prev => [{ msg: `Bid accepted from ${bid.freelancer_name}!`, type: 'success' }, ...prev]);
       fetchAll();
       setTab('escrow');
-    } catch (err) {
-      alert('Error accepting bid');
-    }
+    } catch (err) { alert('Error accepting bid'); }
   };
 
   const updateEscrow = async (escrow_id, status) => {
-    if (!window.confirm(`Are you sure you want to ${status} this escrow payment?`)) return;
-    await axios.post('http://localhost:3001/api/contracts/escrow/update', { escrow_id, status });
-    alert(`✅ Escrow ${status} successfully!`);
+    if (!window.confirm(`${status} this escrow payment?`)) return;
+    await axios.post(`${API}/contracts/escrow/update`, { escrow_id, status });
+    setNotifications(prev => [{ msg: `Escrow ${status}!`, type: status === 'Released' ? 'success' : 'error' }, ...prev]);
     fetchAll();
   };
 
   const myContracts = contracts.filter(c => c.client_name === user.name);
-  const myEscrows = escrows.filter(e => 
-    myContracts.some(c => c.project_title === e.project_title)
-  );
+  const pendingEscrows = escrows.filter(e => e.escrow_status !== 'Released' && e.escrow_status !== 'Refunded');
 
-  const navStyle = active => ({
-    padding: '10px 20px', border: 'none', cursor: 'pointer', fontWeight: 'bold',
-    background: active ? '#e94560' : '#f0f0f0',
-    color: active ? 'white' : '#333', borderRadius: '6px'
-  });
+  const tabs = [
+    { id: 'projects', label: 'Projects', icon: '▦' },
+    { id: 'post', label: 'Post Project', icon: '+' },
+    { id: 'contracts', label: 'Contracts', icon: '◈' },
+    { id: 'escrow', label: 'Payments', icon: '$' },
+  ];
 
-  const tableHead = { background: '#1a1a2e', color: 'white' };
-  const table = { borderCollapse: 'collapse', width: '100%', background: 'white' };
+  const Badge = ({ status }) => {
+    const map = {
+      'Pending': '#f59e0b', 'Funded': '#10b981', 'Released': '#3b82f6',
+      'Refunded': '#ef4444', 'Signed': '#10b981', 'Open': '#ef4444'
+    };
+    const color = map[status] || '#6b7280';
+    return (
+      <span style={{
+        display: 'inline-flex', alignItems: 'center', gap: '5px',
+        padding: '3px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600',
+        background: `${color}18`, color, border: `1px solid ${color}30`
+      }}>
+        <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: color, display: 'inline-block' }} />
+        {status}
+      </span>
+    );
+  };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#f5f5f5' }}>
-      {/* Header */}
-      <div style={{ background: '#1a1a2e', padding: '1rem 2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <span style={{ color: '#e94560', fontWeight: 'bold', fontSize: '1.2rem' }}>FreelancePlatform</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <span style={{ color: 'white' }}>👤 {user.name} (Customer)</span>
-          <button onClick={logout} style={{ padding: '6px 14px', background: '#e94560', color: 'white', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>Logout</button>
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#0a0a0f', fontFamily: "'Inter', 'Segoe UI', sans-serif", color: 'white' }}>
+
+      {/* Sidebar */}
+      <div style={{
+        width: '240px', background: '#0d0d14', borderRight: '1px solid #1e1e2e',
+        display: 'flex', flexDirection: 'column', padding: '0', flexShrink: 0,
+        position: 'fixed', height: '100vh', zIndex: 50
+      }}>
+        {/* Logo */}
+        <div style={{ padding: '24px 20px', borderBottom: '1px solid #1e1e2e' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              width: '32px', height: '32px', background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+              borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem'
+            }}>🚀</div>
+            <span style={{ fontWeight: '700', fontSize: '0.95rem', letterSpacing: '-0.3px' }}>FreelancePlatform</span>
+          </div>
+        </div>
+
+        {/* User Info */}
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #1e1e2e' }}>
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            background: '#161622', borderRadius: '10px', padding: '10px 12px'
+          }}>
+            <div style={{
+              width: '34px', height: '34px', borderRadius: '50%',
+              background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontWeight: '700', fontSize: '0.9rem', flexShrink: 0
+            }}>{user.name[0]}</div>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '600', color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</div>
+              <div style={{ fontSize: '0.72rem', color: '#7c3aed', fontWeight: '500' }}>Customer</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <nav style={{ padding: '12px 12px', flex: 1 }}>
+          <div style={{ fontSize: '0.65rem', color: '#4b5563', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', padding: '0 8px', marginBottom: '8px' }}>Menu</div>
+          {tabs.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+              padding: '9px 12px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+              background: tab === t.id ? '#161622' : 'transparent',
+              color: tab === t.id ? 'white' : '#6b7280',
+              fontSize: '0.875rem', fontWeight: tab === t.id ? '600' : '400',
+              marginBottom: '2px', textAlign: 'left', transition: 'all 0.15s',
+              borderLeft: tab === t.id ? '2px solid #7c3aed' : '2px solid transparent'
+            }}>
+              <span style={{ fontSize: '0.8rem', color: tab === t.id ? '#7c3aed' : '#4b5563' }}>{t.icon}</span>
+              {t.label}
+              {t.id === 'escrow' && pendingEscrows.length > 0 && (
+                <span style={{ marginLeft: 'auto', background: '#7c3aed', color: 'white', borderRadius: '10px', padding: '1px 7px', fontSize: '0.7rem', fontWeight: '700' }}>{pendingEscrows.length}</span>
+              )}
+            </button>
+          ))}
+        </nav>
+
+        {/* Logout */}
+        <div style={{ padding: '16px 12px', borderTop: '1px solid #1e1e2e' }}>
+          <button onClick={logout} style={{
+            width: '100%', padding: '9px 12px', background: 'transparent',
+            color: '#6b7280', border: '1px solid #1e1e2e', borderRadius: '8px',
+            cursor: 'pointer', fontSize: '0.875rem', fontWeight: '500',
+            display: 'flex', alignItems: 'center', gap: '8px', transition: 'all 0.15s'
+          }}>
+            <span>↩</span> Sign out
+          </button>
         </div>
       </div>
 
-      <div style={{ padding: '2rem' }}>
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '1.5rem', flexWrap: 'wrap' }}>
-          <button style={navStyle(tab === 'projects')}  onClick={() => setTab('projects')}>All Projects</button>
-          <button style={navStyle(tab === 'post')}      onClick={() => setTab('post')}>Post a Project</button>
-          <button style={navStyle(tab === 'contracts')} onClick={() => setTab('contracts')}>My Contracts</button>
-          <button style={navStyle(tab === 'escrow')}    onClick={() => setTab('escrow')}>Escrow & Payments</button>
-        </div>
+      {/* Main Content */}
+      <div style={{ marginLeft: '240px', flex: 1, display: 'flex', flexDirection: 'column' }}>
 
-        {/* All Projects */}
-        {tab === 'projects' && (
+        {/* Top Bar */}
+        <div style={{
+          padding: '16px 32px', borderBottom: '1px solid #1e1e2e',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          background: '#0a0a0f', position: 'sticky', top: 0, zIndex: 40
+        }}>
           <div>
-            <h2>All Projects</h2>
-            <table border="1" cellPadding="8" style={table}>
-              <thead style={tableHead}>
-                <tr><th>Title</th><th>Budget</th><th>Deadline</th><th>Client</th><th>Category</th><th>Action</th></tr>
-              </thead>
-              <tbody>
-                {projects.map(p => (
-                  <tr key={p.project_id}>
-                    <td>{p.title}</td>
-                    <td>${p.budget}</td>
-                    <td>{p.deadline?.slice(0, 10)}</td>
-                    <td>{p.client}</td>
-                    <td>{p.category_name}</td>
-                    <td>
-                      {p.client === user.name && (
-                        <button
-                          onClick={() => viewBids(p)}
-                          style={{ padding: '6px 12px', background: '#1a1a2e', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                          View Bids
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* View Bids for a Project */}
-        {tab === 'bids' && selectedProject && (
-          <div>
-            <button onClick={() => setTab('projects')} style={{ marginBottom: '1rem', padding: '6px 12px', cursor: 'pointer' }}>← Back</button>
-            <h2>Bids for: {selectedProject.title}</h2>
-            {bids.length === 0 ? (
-              <p>No bids yet for this project.</p>
-            ) : (
-              <table border="1" cellPadding="8" style={table}>
-                <thead style={tableHead}>
-                  <tr><th>Freelancer</th><th>Reputation</th><th>Bid Amount</th><th>Proposal</th><th>Action</th></tr>
-                </thead>
-                <tbody>
-                  {bids.map(b => (
-                    <tr key={b.bid_id}>
-                      <td>{b.freelancer_name}</td>
-                      <td>⭐ {b.reputation_score ?? 'N/A'}</td>
-                      <td>${b.amount}</td>
-                      <td>{b.proposal}</td>
-                      <td>
-                        <button
-                          onClick={() => acceptBid(b)}
-                          style={{ padding: '6px 12px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                          ✅ Accept
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )}
-
-        {/* Post Project */}
-        {tab === 'post' && (
-          <div style={{ background: 'white', padding: '2rem', borderRadius: '8px', maxWidth: '500px' }}>
-            <h2>Post a New Project</h2>
-            <input placeholder="Title *" value={form.title}
-              onChange={e => setForm({ ...form, title: e.target.value })}
-              style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '6px', border: '1px solid #ddd', boxSizing: 'border-box' }} />
-            <textarea placeholder="Description" value={form.description}
-              onChange={e => setForm({ ...form, description: e.target.value })}
-              rows={3}
-              style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '6px', border: '1px solid #ddd', boxSizing: 'border-box' }} />
-            <input placeholder="Budget *" type="number" value={form.budget}
-              onChange={e => setForm({ ...form, budget: e.target.value })}
-              style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '6px', border: '1px solid #ddd', boxSizing: 'border-box' }} />
-            <input placeholder="Deadline *" type="date" value={form.deadline}
-              onChange={e => setForm({ ...form, deadline: e.target.value })}
-              style={{ width: '100%', padding: '10px', marginBottom: '10px', borderRadius: '6px', border: '1px solid #ddd', boxSizing: 'border-box' }} />
-            <button onClick={postProject}
-              style={{ width: '100%', padding: '12px', background: '#e94560', color: 'white', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-              Post Project
-            </button>
-          </div>
-        )}
-
-        {/* My Contracts */}
-        {tab === 'contracts' && (
-          <div>
-            <h2>My Contracts</h2>
-            <table border="1" cellPadding="8" style={table}>
-              <thead style={tableHead}>
-                <tr><th>Project</th><th>Freelancer</th><th>Status</th><th>Escrow</th><th>Payment</th></tr>
-              </thead>
-              <tbody>
-                {myContracts.length === 0
-                  ? <tr><td colSpan="5" style={{ textAlign: 'center' }}>No contracts yet</td></tr>
-                  : myContracts.map((c, i) => (
-                    <tr key={i}>
-                      <td>{c.project_title}</td>
-                      <td>{c.freelancer_assigned}</td>
-                      <td>{c.contract_status}</td>
-                      <td>${c.escrow_amount ?? 'N/A'}</td>
-                      <td>{c.payment_status ?? 'N/A'}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Escrow & Payments */}
-        {tab === 'escrow' && (
-          <div>
-            <h2>Escrow & Payments</h2>
-            <table border="1" cellPadding="8" style={table}>
-              <thead style={tableHead}>
-                <tr><th>Project</th><th>Freelancer</th><th>Amount</th><th>Escrow Status</th><th>Actions</th></tr>
-              </thead>
-              <tbody>
-                {escrows.length === 0
-                  ? <tr><td colSpan="5" style={{ textAlign: 'center' }}>No escrow payments yet</td></tr>
-                  : escrows.filter(e => e.escrow_status !== 'Released' && e.escrow_status !== 'Refunded').map((e, i) => (
-                    <tr key={i}>
-                      <td>{e.project_title}</td>
-                      <td>{e.freelancer_name}</td>
-                      <td>${e.amount}</td>
-                      <td>
-                        <span style={{
-                          padding: '4px 10px', borderRadius: '12px', fontSize: '0.85rem', fontWeight: 'bold',
-                          background: e.escrow_status === 'Funded' ? '#d4edda' : e.escrow_status === 'Released' ? '#cce5ff' : e.escrow_status === 'Refunded' ? '#f8d7da' : '#fff3cd',
-                          color: e.escrow_status === 'Funded' ? '#155724' : e.escrow_status === 'Released' ? '#004085' : e.escrow_status === 'Refunded' ? '#721c24' : '#856404'
-                        }}>
-                          {e.escrow_status}
-                        </span>
-                      </td>
-                      <td style={{ display: 'flex', gap: '6px' }}>
-                        {e.escrow_status !== 'Released' && e.escrow_status !== 'Refunded' && (
-                          <>
-                            <button onClick={() => updateEscrow(e.escrow_id, 'Released')}
-                              style={{ padding: '6px 10px', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                              ✅ Release
-                            </button>
-                            <button onClick={() => updateEscrow(e.escrow_id, 'Refunded')}
-                              style={{ padding: '6px 10px', background: '#dc3545', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>
-                              🔄 Refund
-                            </button>
-                          </>
-                        )}
-                        {(e.escrow_status === 'Released' || e.escrow_status === 'Refunded') && (
-                          <span style={{ color: '#666', fontSize: '0.85rem' }}>No actions available</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-            <p style={{ marginTop: '1rem', color: '#666', fontSize: '0.85rem' }}>
-              ✅ <strong>Release</strong> — pays the freelancer | 🔄 <strong>Refund</strong> — refunds you and auto-opens a dispute
+            <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700', color: 'white' }}>
+              {tabs.find(t => t.id === tab)?.label || 'Dashboard'}
+            </h1>
+            <p style={{ margin: 0, fontSize: '0.8rem', color: '#4b5563' }}>
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
             </p>
           </div>
-        )}
+
+          {/* Notification Bell */}
+          <div style={{ position: 'relative' }}>
+            <button onClick={() => setShowNotif(!showNotif)} style={{
+              background: '#161622', border: '1px solid #1e1e2e', borderRadius: '10px',
+              padding: '8px 14px', cursor: 'pointer', color: 'white', fontSize: '1rem',
+              display: 'flex', alignItems: 'center', gap: '6px', position: 'relative'
+            }}>
+              🔔
+              {notifications.length > 0 && (
+                <span style={{
+                  position: 'absolute', top: '-4px', right: '-4px',
+                  background: '#7c3aed', color: 'white', borderRadius: '50%',
+                  width: '16px', height: '16px', fontSize: '0.65rem',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700'
+                }}>{notifications.length}</span>
+              )}
+            </button>
+            {showNotif && (
+              <div style={{
+                position: 'absolute', right: 0, top: '110%', width: '320px',
+                background: '#0d0d14', border: '1px solid #1e1e2e',
+                borderRadius: '12px', boxShadow: '0 20px 60px rgba(0,0,0,0.6)', zIndex: 999
+              }}>
+                <div style={{ padding: '14px 16px', borderBottom: '1px solid #1e1e2e', display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ fontWeight: '700', fontSize: '0.9rem' }}>Notifications</span>
+                  <span onClick={() => { setNotifications([]); setShowNotif(false); }}
+                    style={{ color: '#7c3aed', fontSize: '0.8rem', cursor: 'pointer' }}>Clear all</span>
+                </div>
+                {notifications.length === 0
+                  ? <div style={{ padding: '2rem', textAlign: 'center', color: '#4b5563', fontSize: '0.85rem' }}>All caught up! 🎉</div>
+                  : notifications.map((n, i) => (
+                    <div key={i} style={{ padding: '12px 16px', borderBottom: '1px solid #1e1e2e', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+                      <span style={{ fontSize: '1rem', marginTop: '1px' }}>{n.type === 'success' ? '✅' : n.type === 'error' ? '❌' : '⚠️'}</span>
+                      <span style={{ color: '#9ca3af', fontSize: '0.85rem', lineHeight: '1.4' }}>{n.msg}</span>
+                    </div>
+                  ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Page Content */}
+        <div style={{ padding: '32px', flex: 1 }}>
+
+          {/* Stats Row */}
+          {tab === 'projects' && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px', marginBottom: '28px' }}>
+              {[
+                { label: 'Total Projects', value: projects.length, icon: '▦', color: '#7c3aed' },
+                { label: 'Active Contracts', value: myContracts.length, icon: '◈', color: '#10b981' },
+                { label: 'Pending Payments', value: pendingEscrows.length, icon: '$', color: '#f59e0b' },
+              ].map((s, i) => (
+                <div key={i} style={{
+                  background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px',
+                  padding: '20px 24px', display: 'flex', alignItems: 'center', gap: '16px'
+                }}>
+                  <div style={{
+                    width: '42px', height: '42px', borderRadius: '10px',
+                    background: `${s.color}18`, display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', fontSize: '1.1rem', color: s.color, fontWeight: '700'
+                  }}>{s.icon}</div>
+                  <div>
+                    <div style={{ fontSize: '1.6rem', fontWeight: '800', lineHeight: 1 }}>{s.value}</div>
+                    <div style={{ fontSize: '0.78rem', color: '#4b5563', marginTop: '4px' }}>{s.label}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* All Projects */}
+          {tab === 'projects' && (
+            <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', overflow: 'hidden' }}>
+              <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e1e2e', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: '700', fontSize: '0.95rem' }}>All Projects</span>
+                <button onClick={() => setTab('post')} style={{
+                  padding: '7px 14px', background: '#7c3aed', color: 'white',
+                  border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: '600'
+                }}>+ New Project</button>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#0a0a0f' }}>
+                    {['Project', 'Budget', 'Deadline', 'Client', 'Category', ''].map(h => (
+                      <th key={h} style={{ padding: '10px 24px', textAlign: 'left', fontSize: '0.72rem', color: '#4b5563', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {projects.length === 0
+                    ? <tr><td colSpan="6" style={{ padding: '3rem', textAlign: 'center', color: '#4b5563' }}>No projects yet</td></tr>
+                    : projects.map(p => (
+                      <tr key={p.project_id} style={{ borderTop: '1px solid #1e1e2e' }}>
+                        <td style={{ padding: '14px 24px', fontSize: '0.875rem', fontWeight: '600', color: 'white' }}>{p.title}</td>
+                        <td style={{ padding: '14px 24px', fontSize: '0.875rem', color: '#10b981', fontWeight: '600' }}>${parseFloat(p.budget).toLocaleString()}</td>
+                        <td style={{ padding: '14px 24px', fontSize: '0.875rem', color: '#6b7280' }}>{p.deadline?.slice(0, 10)}</td>
+                        <td style={{ padding: '14px 24px', fontSize: '0.875rem', color: '#9ca3af' }}>{p.client}</td>
+                        <td style={{ padding: '14px 24px' }}>
+                          <span style={{ padding: '3px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: '600', background: '#7c3aed18', color: '#7c3aed', border: '1px solid #7c3aed30' }}>{p.category_name}</span>
+                        </td>
+                        <td style={{ padding: '14px 24px' }}>
+                          {p.client === user.name && (
+                            <button onClick={() => viewBids(p)} style={{
+                              padding: '6px 14px', background: 'transparent', color: '#7c3aed',
+                              border: '1px solid #7c3aed40', borderRadius: '7px', cursor: 'pointer',
+                              fontSize: '0.78rem', fontWeight: '600'
+                            }}>View Bids →</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* View Bids */}
+          {tab === 'bids' && selectedProject && (
+            <div>
+              <button onClick={() => setTab('projects')} style={{
+                background: 'transparent', border: 'none', color: '#7c3aed',
+                cursor: 'pointer', fontSize: '0.875rem', marginBottom: '20px',
+                display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '600', padding: 0
+              }}>← Back to Projects</button>
+              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e1e2e' }}>
+                  <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>Bids for: {selectedProject.title}</div>
+                  <div style={{ color: '#4b5563', fontSize: '0.8rem', marginTop: '4px' }}>{bids.length} bid{bids.length !== 1 ? 's' : ''} received</div>
+                </div>
+                {bids.length === 0
+                  ? <div style={{ padding: '3rem', textAlign: 'center', color: '#4b5563' }}>No bids yet</div>
+                  : bids.map(b => (
+                    <div key={b.bid_id} style={{
+                      padding: '20px 24px', borderTop: '1px solid #1e1e2e',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                        <div style={{
+                          width: '40px', height: '40px', borderRadius: '50%',
+                          background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontWeight: '700', fontSize: '0.95rem', flexShrink: 0
+                        }}>{b.freelancer_name?.[0]}</div>
+                        <div>
+                          <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{b.freelancer_name}</div>
+                          <div style={{ color: '#4b5563', fontSize: '0.8rem', marginTop: '2px' }}>⭐ {b.reputation_score ?? 'N/A'} reputation</div>
+                          <div style={{ color: '#6b7280', fontSize: '0.82rem', marginTop: '4px' }}>{b.proposal}</div>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                        <div style={{ fontSize: '1.3rem', fontWeight: '800', color: '#10b981' }}>${b.amount}</div>
+                        <button onClick={() => acceptBid(b)} style={{
+                          marginTop: '8px', padding: '7px 16px', background: '#10b981',
+                          color: 'white', border: 'none', borderRadius: '8px',
+                          cursor: 'pointer', fontWeight: '600', fontSize: '0.82rem'
+                        }}>Accept Bid</button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Post Project */}
+          {tab === 'post' && (
+            <div style={{ maxWidth: '560px' }}>
+              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', padding: '28px' }}>
+                <div style={{ fontWeight: '700', fontSize: '1rem', marginBottom: '24px' }}>Post a New Project</div>
+                {[
+                  { label: 'Project Title *', key: 'title', type: 'text', placeholder: 'e.g. Build a React Dashboard' },
+                  { label: 'Budget ($) *', key: 'budget', type: 'number', placeholder: 'e.g. 1500' },
+                ].map(f => (
+                  <div key={f.key} style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{f.label}</label>
+                    <input type={f.type} placeholder={f.placeholder} value={form[f.key]}
+                      onChange={e => setForm({ ...form, [f.key]: e.target.value })}
+                      style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                  </div>
+                ))}
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Description</label>
+                  <textarea placeholder="Describe your project requirements..." value={form.description}
+                    onChange={e => setForm({ ...form, description: e.target.value })}
+                    rows={3} style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', resize: 'vertical', outline: 'none' }} />
+                </div>
+                <div style={{ marginBottom: '16px' }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Deadline *</label>
+                  <input type="date" value={form.deadline}
+                    onChange={e => setForm({ ...form, deadline: e.target.value })}
+                    style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }} />
+                </div>
+                <div style={{ marginBottom: '24px' }}>
+                  <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Category</label>
+                  <select value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })}
+                    style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', outline: 'none' }}>
+                    {[['1','Web Design'],['2','Mobile App'],['3','Graphic Design'],['4','Data Science'],['5','Content Writing']].map(([v, l]) => (
+                      <option key={v} value={v}>{l}</option>
+                    ))}
+                  </select>
+                </div>
+                <button onClick={postProject} disabled={loading} style={{
+                  width: '100%', padding: '12px', background: loading ? '#4b5563' : '#7c3aed',
+                  color: 'white', border: 'none', borderRadius: '9px',
+                  fontWeight: '700', fontSize: '0.95rem', cursor: loading ? 'not-allowed' : 'pointer'
+                }}>{loading ? 'Posting...' : 'Post Project'}</button>
+              </div>
+            </div>
+          )}
+
+          {/* My Contracts */}
+          {tab === 'contracts' && (
+            <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', overflow: 'hidden' }}>
+              <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e1e2e' }}>
+                <span style={{ fontWeight: '700', fontSize: '0.95rem' }}>My Contracts</span>
+              </div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr style={{ background: '#0a0a0f' }}>
+                    {['Project', 'Freelancer', 'Status', 'Escrow', 'Payment'].map(h => (
+                      <th key={h} style={{ padding: '10px 24px', textAlign: 'left', fontSize: '0.72rem', color: '#4b5563', fontWeight: '600', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {myContracts.length === 0
+                    ? <tr><td colSpan="5" style={{ padding: '3rem', textAlign: 'center', color: '#4b5563' }}>No contracts yet</td></tr>
+                    : myContracts.map((c, i) => (
+                      <tr key={i} style={{ borderTop: '1px solid #1e1e2e' }}>
+                        <td style={{ padding: '14px 24px', fontWeight: '600', fontSize: '0.875rem' }}>{c.project_title}</td>
+                        <td style={{ padding: '14px 24px', color: '#9ca3af', fontSize: '0.875rem' }}>{c.freelancer_assigned}</td>
+                        <td style={{ padding: '14px 24px' }}><Badge status={c.contract_status} /></td>
+                        <td style={{ padding: '14px 24px', color: '#10b981', fontWeight: '600', fontSize: '0.875rem' }}>${c.escrow_amount ?? 'N/A'}</td>
+                        <td style={{ padding: '14px 24px' }}><Badge status={c.payment_status} /></td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Escrow & Payments */}
+          {tab === 'escrow' && (
+            <div>
+              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e1e2e' }}>
+                  <div style={{ fontWeight: '700', fontSize: '0.95rem' }}>Escrow & Payments</div>
+                  <div style={{ color: '#4b5563', fontSize: '0.8rem', marginTop: '4px' }}>{pendingEscrows.length} pending payment{pendingEscrows.length !== 1 ? 's' : ''}</div>
+                </div>
+                {pendingEscrows.length === 0
+                  ? <div style={{ padding: '3rem', textAlign: 'center', color: '#4b5563' }}>No pending payments 🎉</div>
+                  : pendingEscrows.map((e, i) => (
+                    <div key={i} style={{ padding: '20px 24px', borderTop: '1px solid #1e1e2e', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <div>
+                        <div style={{ fontWeight: '600', fontSize: '0.9rem' }}>{e.project_title}</div>
+                        <div style={{ color: '#6b7280', fontSize: '0.8rem', marginTop: '3px' }}>Freelancer: {e.freelancer_name}</div>
+                        <div style={{ marginTop: '6px' }}><Badge status={e.escrow_status} /></div>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <div style={{ fontSize: '1.4rem', fontWeight: '800', color: '#10b981', marginBottom: '10px' }}>${e.amount}</div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button onClick={() => updateEscrow(e.escrow_id, 'Released')} style={{
+                            padding: '7px 16px', background: '#10b981', color: 'white',
+                            border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.82rem'
+                          }}>Release</button>
+                          <button onClick={() => updateEscrow(e.escrow_id, 'Refunded')} style={{
+                            padding: '7px 16px', background: 'transparent', color: '#ef4444',
+                            border: '1px solid #ef444440', borderRadius: '8px', cursor: 'pointer', fontWeight: '600', fontSize: '0.82rem'
+                          }}>Refund</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

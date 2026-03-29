@@ -29,8 +29,8 @@ BEGIN
   END IF;
 END$$
 
--- TRIGGER 2: When escrow status changes to 'Refunded',
--- automatically open a Dispute record
+-- -- TRIGGER 2: When escrow status changes to 'Refunded',
+-- -- automatically open a Dispute record
 CREATE TRIGGER auto_open_dispute
 AFTER UPDATE ON ESCROW_PAYMENT
 FOR EACH ROW

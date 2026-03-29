@@ -33,4 +33,19 @@ router.get('/portfolios', async (req, res) => {
   }
 });
 
+// UPDATE: Artist bio
+router.put('/bio', async (req, res) => {
+  const { user_id, bio } = req.body;
+  try {
+    await db.query(
+      `UPDATE ARTIST_PROFILE SET bio = ? WHERE user_id = ?`,
+      [bio, user_id]
+    );
+    res.json({ message: 'Bio updated successfully!' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Error updating bio' });
+  }
+});
+
 module.exports = router;

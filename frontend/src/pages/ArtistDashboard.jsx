@@ -12,6 +12,11 @@ export default function ArtistDashboard() {
   const [tab, setTab] = useState('profile');
   const [notifications, setNotifications] = useState([]);
   const [showNotif, setShowNotif] = useState(false);
+  const [passForm, setPassForm] = useState({ old_password: '', new_password: '', confirm_password: '' });
+  const [passMsg, setPassMsg] = useState('');
+  const [showOld, setShowOld] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -28,11 +33,42 @@ export default function ArtistDashboard() {
 
   const myProfile = artists.find(a => a.name === user.name);
 
+  const changePassword = async () => {
+    setPassMsg('');
+    if (!passForm.old_password || !passForm.new_password || !passForm.confirm_password) {
+      setPassMsg({ text: 'Please fill in all fields', type: 'error' }); return;
+    }
+    if (passForm.new_password !== passForm.confirm_password) {
+      setPassMsg({ text: 'New passwords do not match', type: 'error' }); return;
+    }
+    if (passForm.new_password.length < 6) {
+      setPassMsg({ text: 'Password must be at least 6 characters', type: 'error' }); return;
+    }
+    try {
+      await axios.post(`${API}/users/change-password`, {
+        user_id: user.user_id,
+        old_password: passForm.old_password,
+        new_password: passForm.new_password
+      });
+      setPassMsg({ text: 'Password changed successfully!', type: 'success' });
+      setPassForm({ old_password: '', new_password: '', confirm_password: '' });
+    } catch (err) {
+      setPassMsg({ text: err.response?.data?.message || 'Error changing password', type: 'error' });
+    }
+  };
+
   const tabs = [
     { id: 'profile', label: 'My Profile', icon: '👤' },
     { id: 'portfolio', label: 'Portfolios', icon: '🎨' },
     { id: 'artists', label: 'All Artists', icon: '✦' },
+    { id: 'settings', label: 'Settings', icon: '⚙' },
   ];
+
+  const inputStyle = {
+    width: '100%', padding: '10px 40px 10px 14px', background: '#161622',
+    border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white',
+    fontSize: '0.9rem', boxSizing: 'border-box'
+  };
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#0a0a0f', fontFamily: "'Inter', 'Segoe UI', sans-serif", color: 'white' }}>
@@ -42,7 +78,6 @@ export default function ArtistDashboard() {
         width: '240px', background: '#0d0d14', borderRight: '1px solid #1e1e2e',
         display: 'flex', flexDirection: 'column', position: 'fixed', height: '100vh', zIndex: 50
       }}>
-        {/* Logo */}
         <div style={{ padding: '24px 20px', borderBottom: '1px solid #1e1e2e' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
             <div style={{
@@ -53,12 +88,8 @@ export default function ArtistDashboard() {
           </div>
         </div>
 
-        {/* User Info */}
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #1e1e2e' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '10px',
-            background: '#161622', borderRadius: '10px', padding: '10px 12px'
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#161622', borderRadius: '10px', padding: '10px 12px' }}>
             <div style={{
               width: '34px', height: '34px', borderRadius: '50%',
               background: 'linear-gradient(135deg, #f59e0b, #d97706)',
@@ -72,7 +103,6 @@ export default function ArtistDashboard() {
           </div>
         </div>
 
-        {/* Nav */}
         <nav style={{ padding: '12px 12px', flex: 1 }}>
           <div style={{ fontSize: '0.65rem', color: '#4b5563', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '1px', padding: '0 8px', marginBottom: '8px' }}>Menu</div>
           {tabs.map(t => (
@@ -91,7 +121,6 @@ export default function ArtistDashboard() {
           ))}
         </nav>
 
-        {/* Logout */}
         <div style={{ padding: '16px 12px', borderTop: '1px solid #1e1e2e' }}>
           <button onClick={logout} style={{
             width: '100%', padding: '9px 12px', background: 'transparent',
@@ -117,8 +146,6 @@ export default function ArtistDashboard() {
             <h1 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '700' }}>{tabs.find(t => t.id === tab)?.label}</h1>
             <p style={{ margin: 0, fontSize: '0.8rem', color: '#4b5563' }}>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
           </div>
-
-          {/* Notification Bell */}
           <div style={{ position: 'relative' }}>
             <button onClick={() => setShowNotif(!showNotif)} style={{
               background: '#161622', border: '1px solid #1e1e2e', borderRadius: '10px',
@@ -150,18 +177,12 @@ export default function ArtistDashboard() {
           </div>
         </div>
 
-        {/* Page Content */}
         <div style={{ padding: '32px', flex: 1 }}>
 
           {/* My Profile */}
           {tab === 'profile' && (
             <div style={{ maxWidth: '600px' }}>
-              {/* Profile Card */}
-              <div style={{
-                background: '#0d0d14', border: '1px solid #1e1e2e',
-                borderRadius: '16px', overflow: 'hidden', marginBottom: '20px'
-              }}>
-                {/* Banner */}
+              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '16px', overflow: 'hidden', marginBottom: '20px' }}>
                 <div style={{
                   height: '100px',
                   background: 'linear-gradient(135deg, #f59e0b22, #d9770622, #0a0a0f)',
@@ -172,15 +193,12 @@ export default function ArtistDashboard() {
                     width: '60px', height: '60px', borderRadius: '50%',
                     background: 'linear-gradient(135deg, #f59e0b, #d97706)',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontWeight: '800', fontSize: '1.5rem',
-                    border: '3px solid #0d0d14'
+                    fontWeight: '800', fontSize: '1.5rem', border: '3px solid #0d0d14'
                   }}>{user.name[0]}</div>
                 </div>
-
                 <div style={{ padding: '40px 24px 24px' }}>
                   <div style={{ fontSize: '1.2rem', fontWeight: '800', marginBottom: '4px' }}>{user.name}</div>
                   <div style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: '600', marginBottom: '16px' }}>🎨 Artist</div>
-
                   {myProfile ? (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
                       {[
@@ -202,8 +220,6 @@ export default function ArtistDashboard() {
                   )}
                 </div>
               </div>
-
-              {/* Stats */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
                 {[
                   { label: 'Total Artists', value: artists.length, color: '#f59e0b' },
@@ -221,38 +237,25 @@ export default function ArtistDashboard() {
 
           {/* Portfolios */}
           {tab === 'portfolio' && (
-            <div>
-              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', overflow: 'hidden' }}>
-                <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e1e2e' }}>
-                  <span style={{ fontWeight: '700', fontSize: '0.95rem' }}>Artist Portfolios</span>
-                </div>
-                {portfolios.length === 0
-                  ? (
-                    <div style={{ padding: '4rem', textAlign: 'center' }}>
-                      <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>🎨</div>
-                      <div style={{ color: '#4b5563', fontSize: '0.9rem' }}>No portfolios yet</div>
-                    </div>
-                  )
-                  : (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', padding: '24px' }}>
-                      {portfolios.map((p, i) => (
-                        <div key={i} style={{
-                          background: '#161622', border: '1px solid #1e1e2e',
-                          borderRadius: '12px', padding: '20px', transition: 'border-color 0.2s'
-                        }}>
-                          <div style={{
-                            width: '44px', height: '44px', borderRadius: '10px',
-                            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            fontSize: '1.2rem', marginBottom: '14px'
-                          }}>🎨</div>
-                          <div style={{ fontWeight: '700', fontSize: '0.9rem', marginBottom: '6px' }}>{p.name}</div>
-                          <div style={{ color: '#6b7280', fontSize: '0.82rem', lineHeight: '1.5' }}>{p.portfolio_description}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+            <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', overflow: 'hidden' }}>
+              <div style={{ padding: '18px 24px', borderBottom: '1px solid #1e1e2e' }}>
+                <span style={{ fontWeight: '700', fontSize: '0.95rem' }}>Artist Portfolios</span>
               </div>
+              {portfolios.length === 0
+                ? <div style={{ padding: '4rem', textAlign: 'center' }}>
+                  <div style={{ fontSize: '2.5rem', marginBottom: '16px' }}>🎨</div>
+                  <div style={{ color: '#4b5563', fontSize: '0.9rem' }}>No portfolios yet</div>
+                </div>
+                : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '16px', padding: '24px' }}>
+                  {portfolios.map((p, i) => (
+                    <div key={i} style={{ background: '#161622', border: '1px solid #1e1e2e', borderRadius: '12px', padding: '20px' }}>
+                      <div style={{ width: '44px', height: '44px', borderRadius: '10px', background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', marginBottom: '14px' }}>🎨</div>
+                      <div style={{ fontWeight: '700', fontSize: '0.9rem', marginBottom: '6px' }}>{p.name}</div>
+                      <div style={{ color: '#6b7280', fontSize: '0.82rem', lineHeight: '1.5' }}>{p.portfolio_description}</div>
+                    </div>
+                  ))}
+                </div>
+              }
             </div>
           )}
 
@@ -267,26 +270,66 @@ export default function ArtistDashboard() {
                 ? <div style={{ padding: '3rem', textAlign: 'center', color: '#4b5563' }}>No artists yet</div>
                 : artists.map((a, i) => (
                   <div key={i} style={{ padding: '18px 24px', borderTop: '1px solid #1e1e2e', display: 'flex', alignItems: 'center', gap: '14px' }}>
-                    <div style={{
-                      width: '42px', height: '42px', borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontWeight: '700', fontSize: '0.95rem', flexShrink: 0
-                    }}>{a.name[0]}</div>
+                    <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: 'linear-gradient(135deg, #f59e0b, #d97706)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '700', fontSize: '0.95rem', flexShrink: 0 }}>{a.name[0]}</div>
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: '600', fontSize: '0.9rem', marginBottom: '2px' }}>{a.name}</div>
                       <div style={{ color: '#6b7280', fontSize: '0.8rem' }}>{a.email}</div>
                       {a.bio && <div style={{ color: '#4b5563', fontSize: '0.78rem', marginTop: '4px' }}>{a.bio}</div>}
                     </div>
-                    <div style={{ textAlign: 'right' }}>
-                      {a.reputation_score && (
-                        <span style={{ background: '#f59e0b18', color: '#f59e0b', padding: '4px 10px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: '700' }}>
-                          ⭐ {a.reputation_score}
-                        </span>
-                      )}
+                    {a.reputation_score && (
+                      <span style={{ background: '#f59e0b18', color: '#f59e0b', padding: '4px 10px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: '700' }}>⭐ {a.reputation_score}</span>
+                    )}
+                  </div>
+                ))}
+            </div>
+          )}
+
+          {/* Settings */}
+          {tab === 'settings' && (
+            <div style={{ maxWidth: '480px' }}>
+              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', padding: '28px' }}>
+                <div style={{ fontWeight: '700', fontSize: '1rem', marginBottom: '8px' }}>Change Password</div>
+                <div style={{ color: '#4b5563', fontSize: '0.82rem', marginBottom: '24px' }}>
+                  Make sure your new password is at least 6 characters long.
+                </div>
+                {[
+                  { label: 'Current Password', key: 'old_password', show: showOld, toggle: () => setShowOld(!showOld) },
+                  { label: 'New Password', key: 'new_password', show: showNew, toggle: () => setShowNew(!showNew) },
+                  { label: 'Confirm New Password', key: 'confirm_password', show: showConfirm, toggle: () => setShowConfirm(!showConfirm) },
+                ].map(f => (
+                  <div key={f.key} style={{ marginBottom: '16px' }}>
+                    <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{f.label}</label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={f.show ? 'text' : 'password'}
+                        placeholder={`Enter ${f.label.toLowerCase()}`}
+                        value={passForm[f.key]}
+                        onChange={e => setPassForm({ ...passForm, [f.key]: e.target.value })}
+                        style={inputStyle}
+                      />
+                      <button onClick={f.toggle} style={{
+                        position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', cursor: 'pointer', color: '#4b5563', fontSize: '1rem'
+                      }}>{f.show ? '🙈' : '👁️'}</button>
                     </div>
                   </div>
                 ))}
+                {passMsg && (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem',
+                    background: passMsg.type === 'success' ? '#10b98118' : '#ef444418',
+                    color: passMsg.type === 'success' ? '#10b981' : '#ef4444',
+                    border: `1px solid ${passMsg.type === 'success' ? '#10b98130' : '#ef444430'}`
+                  }}>
+                    {passMsg.type === 'success' ? '✅' : '⚠️'} {passMsg.text}
+                  </div>
+                )}
+                <button onClick={changePassword} style={{
+                  width: '100%', padding: '12px', background: '#f59e0b',
+                  color: 'white', border: 'none', borderRadius: '9px',
+                  fontWeight: '700', fontSize: '0.95rem', cursor: 'pointer'
+                }}>Update Password</button>
+              </div>
             </div>
           )}
         </div>

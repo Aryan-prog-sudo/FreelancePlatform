@@ -10,23 +10,38 @@ export default function FreelancerDashboard() {
   const [projects, setProjects] = useState([]);
   const [bids, setBids] = useState([]);
   const [contracts, setContracts] = useState([]);
+  const [freelancers, setFreelancers] = useState([]);
   const [tab, setTab] = useState('projects');
   const [bidForm, setBidForm] = useState({ amount: '', proposal: '', project_id: '' });
   const [notifications, setNotifications] = useState([]);
   const [showNotif, setShowNotif] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [passForm, setPassForm] = useState({ old_password: '', new_password: '', confirm_password: '' });
+  const [passMsg, setPassMsg] = useState('');
+  const [showOld, setShowOld] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [bio, setBio] = useState('');
+  const [bioMsg, setBioMsg] = useState('');
 
   useEffect(() => { fetchAll(); }, []);
 
   const fetchAll = async () => {
-    const [p, b, c] = await Promise.all([
+    const [p, b, c, f] = await Promise.all([
       axios.get(`${API}/projects`),
       axios.get(`${API}/bids`),
-      axios.get(`${API}/contracts`)
+      axios.get(`${API}/contracts`),
+      axios.get(`${API}/freelancers`)
     ]);
     setProjects(p.data);
     setBids(b.data);
     setContracts(c.data);
+    setFreelancers(f.data);
+
+    // Set current bio
+    const me = f.data.find(x => x.name === user.name);
+    if (me) setBio(me.bio || '');
+
     const notifs = [];
     c.data.filter(x => x.freelancer_assigned === user.name).forEach(c => {
       if (c.contract_status === 'Signed') notifs.push({ msg: `New contract signed for "${c.project_title}"`, type: 'success' });
@@ -52,14 +67,51 @@ export default function FreelancerDashboard() {
     } finally { setLoading(false); }
   };
 
+  const changePassword = async () => {
+    setPassMsg('');
+    if (!passForm.old_password || !passForm.new_password || !passForm.confirm_password) {
+      setPassMsg({ text: 'Please fill in all fields', type: 'error' }); return;
+    }
+    if (passForm.new_password !== passForm.confirm_password) {
+      setPassMsg({ text: 'New passwords do not match', type: 'error' }); return;
+    }
+    if (passForm.new_password.length < 6) {
+      setPassMsg({ text: 'Password must be at least 6 characters', type: 'error' }); return;
+    }
+    try {
+      await axios.post(`${API}/users/change-password`, {
+        user_id: user.user_id,
+        old_password: passForm.old_password,
+        new_password: passForm.new_password
+      });
+      setPassMsg({ text: 'Password changed successfully!', type: 'success' });
+      setPassForm({ old_password: '', new_password: '', confirm_password: '' });
+    } catch (err) {
+      setPassMsg({ text: err.response?.data?.message || 'Error changing password', type: 'error' });
+    }
+  };
+
+  const updateBio = async () => {
+    setBioMsg('');
+    try {
+      await axios.put(`${API}/freelancers/bio`, { user_id: user.user_id, bio });
+      setBioMsg({ text: 'Bio updated successfully!', type: 'success' });
+      fetchAll();
+    } catch (err) {
+      setBioMsg({ text: 'Error updating bio', type: 'error' });
+    }
+  };
+
   const myBids = bids.filter(b => b.freelancer === user.name);
   const myContracts = contracts.filter(c => c.freelancer_assigned === user.name);
+  const myProfile = freelancers.find(f => f.name === user.name);
 
   const tabs = [
     { id: 'projects', label: 'Browse Projects', icon: '▦' },
     { id: 'bid', label: 'Submit Bid', icon: '+' },
     { id: 'mybids', label: 'My Bids', icon: '◈' },
     { id: 'contracts', label: 'My Contracts', icon: '📄' },
+    { id: 'settings', label: 'Settings', icon: '⚙' },
   ];
 
   const Badge = ({ status }) => {
@@ -80,6 +132,23 @@ export default function FreelancerDashboard() {
     );
   };
 
+  const inputStyle = {
+    width: '100%', padding: '10px 40px 10px 14px', background: '#161622',
+    border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white',
+    fontSize: '0.9rem', boxSizing: 'border-box'
+  };
+
+  const MsgBox = ({ msg }) => msg ? (
+    <div style={{
+      padding: '10px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '0.85rem',
+      background: msg.type === 'success' ? '#10b98118' : '#ef444418',
+      color: msg.type === 'success' ? '#10b981' : '#ef4444',
+      border: `1px solid ${msg.type === 'success' ? '#10b98130' : '#ef444430'}`
+    }}>
+      {msg.type === 'success' ? '✅' : '⚠️'} {msg.text}
+    </div>
+  ) : null;
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: '#0a0a0f', fontFamily: "'Inter', 'Segoe UI', sans-serif", color: 'white' }}>
 
@@ -99,10 +168,7 @@ export default function FreelancerDashboard() {
         </div>
 
         <div style={{ padding: '16px 20px', borderBottom: '1px solid #1e1e2e' }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '10px',
-            background: '#161622', borderRadius: '10px', padding: '10px 12px'
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#161622', borderRadius: '10px', padding: '10px 12px' }}>
             <div style={{
               width: '34px', height: '34px', borderRadius: '50%',
               background: 'linear-gradient(135deg, #10b981, #059669)',
@@ -270,7 +336,7 @@ export default function FreelancerDashboard() {
                 </div>
                 <div style={{ marginBottom: '24px' }}>
                   <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Proposal *</label>
-                  <textarea placeholder="Describe why you're the best fit for this project..." value={bidForm.proposal}
+                  <textarea placeholder="Describe why you're the best fit..." value={bidForm.proposal}
                     onChange={e => setBidForm({ ...bidForm, proposal: e.target.value })}
                     rows={4} style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', resize: 'vertical' }} />
                 </div>
@@ -324,6 +390,92 @@ export default function FreelancerDashboard() {
                     </div>
                   </div>
                 ))}
+            </div>
+          )}
+
+          {/* Settings */}
+          {tab === 'settings' && (
+            <div style={{ maxWidth: '480px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+              {/* Profile Card */}
+              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ height: '70px', background: 'linear-gradient(135deg, #10b98122, #05966922)', borderBottom: '1px solid #1e1e2e', position: 'relative' }}>
+                  <div style={{
+                    position: 'absolute', bottom: '-20px', left: '20px',
+                    width: '44px', height: '44px', borderRadius: '50%',
+                    background: 'linear-gradient(135deg, #10b981, #059669)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontWeight: '800', fontSize: '1.1rem', border: '3px solid #0d0d14'
+                  }}>{user.name[0]}</div>
+                </div>
+                <div style={{ padding: '28px 20px 20px' }}>
+                  <div style={{ fontWeight: '700', fontSize: '1rem' }}>{user.name}</div>
+                  <div style={{ color: '#10b981', fontSize: '0.8rem', marginBottom: '12px' }}>Freelancer</div>
+                  {myProfile?.bio && (
+                    <div style={{ color: '#6b7280', fontSize: '0.85rem', lineHeight: '1.5' }}>{myProfile.bio}</div>
+                  )}
+                  {myProfile?.reputation_score > 0 && (
+                    <div style={{ marginTop: '8px', color: '#f59e0b', fontSize: '0.85rem' }}>⭐ {myProfile.reputation_score} reputation</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Bio Section */}
+              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', padding: '24px' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.95rem', marginBottom: '6px' }}>Edit Bio</div>
+                <div style={{ color: '#4b5563', fontSize: '0.82rem', marginBottom: '16px' }}>
+                  Tell clients about your skills and experience.
+                </div>
+                <textarea
+                  placeholder="e.g. I'm a full-stack developer with 5 years of experience in React and Node.js..."
+                  value={bio}
+                  onChange={e => setBio(e.target.value)}
+                  rows={4}
+                  style={{ width: '100%', padding: '10px 14px', background: '#161622', border: '1px solid #1e1e2e', borderRadius: '8px', color: 'white', fontSize: '0.9rem', boxSizing: 'border-box', resize: 'vertical', marginBottom: '12px' }}
+                />
+                <MsgBox msg={bioMsg} />
+                <button onClick={updateBio} style={{
+                  width: '100%', padding: '11px', background: '#10b981',
+                  color: 'white', border: 'none', borderRadius: '9px',
+                  fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer'
+                }}>Save Bio</button>
+              </div>
+
+              {/* Change Password Section */}
+              <div style={{ background: '#0d0d14', border: '1px solid #1e1e2e', borderRadius: '12px', padding: '24px' }}>
+                <div style={{ fontWeight: '700', fontSize: '0.95rem', marginBottom: '6px' }}>Change Password</div>
+                <div style={{ color: '#4b5563', fontSize: '0.82rem', marginBottom: '20px' }}>
+                  Make sure your new password is at least 6 characters long.
+                </div>
+                {[
+                  { label: 'Current Password', key: 'old_password', show: showOld, toggle: () => setShowOld(!showOld) },
+                  { label: 'New Password', key: 'new_password', show: showNew, toggle: () => setShowNew(!showNew) },
+                  { label: 'Confirm New Password', key: 'confirm_password', show: showConfirm, toggle: () => setShowConfirm(!showConfirm) },
+                ].map(f => (
+                  <div key={f.key} style={{ marginBottom: '14px' }}>
+                    <label style={{ display: 'block', fontSize: '0.78rem', color: '#6b7280', fontWeight: '600', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{f.label}</label>
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type={f.show ? 'text' : 'password'}
+                        placeholder={`Enter ${f.label.toLowerCase()}`}
+                        value={passForm[f.key]}
+                        onChange={e => setPassForm({ ...passForm, [f.key]: e.target.value })}
+                        style={inputStyle}
+                      />
+                      <button onClick={f.toggle} style={{
+                        position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', cursor: 'pointer', color: '#4b5563', fontSize: '1rem'
+                      }}>{f.show ? '🙈' : '👁️'}</button>
+                    </div>
+                  </div>
+                ))}
+                <MsgBox msg={passMsg} />
+                <button onClick={changePassword} style={{
+                  width: '100%', padding: '11px', background: '#10b981',
+                  color: 'white', border: 'none', borderRadius: '9px',
+                  fontWeight: '700', fontSize: '0.9rem', cursor: 'pointer'
+                }}>Update Password</button>
+              </div>
             </div>
           )}
         </div>
